@@ -319,3 +319,5 @@ For issues or questions:
 2. Review GitHub Actions workflow logs
 3. Consult AWS CloudFormation stack events
 4. Contact your DevOps team for assistance
+
+### Release Notes
