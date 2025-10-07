@@ -1,28 +1,37 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description:   Lambda that stops EC2 instances matching specific tags on schedule,
+Description: |
+  Lambda that stops EC2 instances matching specific tags on schedule,
   and logs each shutdown to DynamoDB.
+
 Parameters:
   LambdaFunctionName:
     Type: String
-    Default: EC2ShutdownLambdaProd
-    Description: Name for the Lambda function
+    Description: Name of the Lambda function
+    Default: EC2ShutdownLambdaAdvanced
 
   LambdaCodeBucket:
     Type: String
+    Description: S3 bucket with the Lambda ZIP
     Default: ec2-shutdown-lambda-bucket
-    Description: S3 bucket where the Lambda deployment package is stored
 
   LambdaCodeKey:
     Type: String
-    Default: lambda_prod.zip
-    Description: S3 key for the Lambda deployment package (e.g., path/to/lambda.zip)
+    Description: S3 key for Lambda ZIP (e.g. path/to/lambda.zip)
+    Default: lambda-prod.zip
+
+  DynamoDbTableName:
+    Type: String
+    Description: Name for the DynamoDB table to log shutdowns
+    Default: ec2-shutdown-logs-advanced
+
 
 Resources:
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
     Properties:
-      RoleName: !Sub "${LambdaFunctionName}-RoleProd"
+      RoleName: !Sub "${LambdaFunctionName}-Role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -31,39 +40,57 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: EC2ShutdownPolicyProd
+        - PolicyName: EC2AndLoggingPolicyProd
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # EC2 operations
               - Effect: Allow
                 Action:
                   - ec2:DescribeInstances
                   - ec2:StopInstances
                 Resource: "*"
+              # CloudWatch logs
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
+        - PolicyName: DynamoDbLoggingPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt DynamoDbTable.Arn
 
   LambdaFunction:
     Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
     Properties:
       FunctionName: !Ref LambdaFunctionName
       Handler: lambda_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.12
       Timeout: 120
+      Environment:
+        Variables:
+          DDB_TABLE_NAME: !Ref DynamoDbTableName
       Code:
         S3Bucket: !Ref LambdaCodeBucket
         S3Key: !Ref LambdaCodeKey
 
   LambdaScheduleRule:
     Type: AWS::Events::Rule
+    DeletionPolicy: Retain
     Properties:
       Name: !Sub "${LambdaFunctionName}-ScheduleRule"
-      ScheduleExpression: "cron(0 23 * * ? *)"  # 7 PM EST / 8 PM EDT = 11 PM UTC
+      # e.g. daily at 23:00 UTC — adjust to your local schedule
+      ScheduleExpression: "cron(0 23 * * ? *)"
       State: ENABLED
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
@@ -71,8 +98,40 @@ Resources:
 
   PermissionForEventsToInvokeLambda:
     Type: AWS::Lambda::Permission
+    DeletionPolicy: Retain
     Properties:
       FunctionName: !Ref LambdaFunction
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt LambdaScheduleRule.Arn
+
+  DynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Ref DynamoDbTableName
+      AttributeDefinitions:
+        - AttributeName: "ExecutionId"
+          AttributeType: "S"
+        - AttributeName: "InstanceId"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "ExecutionId"
+          KeyType: HASH
+        - AttributeName: "InstanceId"
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+    UpdateReplacePolicy: Retain
+
+Outputs:
+  LambdaFunctionNameOut:
+    Description: Name of the Lambda function
+    Value: !Ref LambdaFunctionName
+
+  DynamoDbTableNameOut:
+    Description: Name of the DynamoDB table
+    Value: !Ref DynamoDbTableName
+
+  DynamoDbTableArnOut:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt DynamoDbTable.Arn

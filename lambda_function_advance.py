@@ -14,6 +14,25 @@ logger = logging.getLogger()
 # AWS Region
 AWS_REGION = 'us-east-1'
 
+def lambda_handler(event, context):
+    """
+    AWS Lambda handler.
+    """
+    try:
+        stopped = stop_running_instances_and_log()
+        verify_dynamodb_entries()
+        return {
+            'statusCode': 200,
+            'body': f'Successfully stopped {stopped} instances.'
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': 'Internal Server Error'
+        }
+
+
 def get_tag_value(tags, key):
     """
     Extract value for a given tag key from a list of tag dictionaries.
