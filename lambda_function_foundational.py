@@ -1,7 +1,8 @@
 import boto3
 
 def lambda_handler(event, context):
-    stop_running_instances_and_print()
+    print("=======================================================")
+    print("Stopping all running instances...")
 
 def get_tag_value(tags, key_name):
     """Helper: from a list of tag dictionaries, return the Value for Key == key_name, or None."""
