@@ -63,7 +63,7 @@ jobs:
         run: |
           mkdir package
           pip install --target ./package -r requirements.txt
-          cp lambda_function_foundational.py package/
+          cp lambda_function_advance.py package/
           cd package
           zip -r ../function.zip .
           cd ..
