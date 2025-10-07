@@ -1,1 +1,88 @@
 
+name: Deploy Lambda to beta
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-beta:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      LAMBDA_NAME_PROD: ${{ secrets.LAMBDA_NAME_PROD }}
+      S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+      S3_PATH_PROD: ${{ secrets.S3_PATH_PROD }}
+      CF_STACK_NAME_PROD: ${{ secrets.CF_STACK_NAME_PROD }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Run required files check
+        id: run_required_files_check
+        run: python test_check_required_files.py
+        working-directory: tests
+      
+      - name: Display PR info
+        run: |
+          echo "Pull Request #${{ github.event.pull_request.number }}"
+          echo "Head branch: ${{ github.head_ref }}"
+          echo "Base branch: ${{ github.event.pull_request.base.ref }}"
+
+      - name: Create deployment package with dependencies
+        run: |
+          mkdir package
+          pip install --target ./package -r requirements.txt
+          cp lambda_function_foundational.py package/
+          cd package
+          zip -r ../function.zip .
+          cd ..
+          mv function.zip ${{ env.LAMBDA_NAME_PROD }}.zip
+      
+      - name: Upload to S3 (Prod)
+        run: |
+          aws s3 cp ${{ env.LAMBDA_NAME_PROD }}.zip s3://${{ env.S3_BUCKET_NAME }}/${{ env.S3_PATH_PROD }} \
+            --region ${{ env.AWS_REGION }}
+      
+      - name: Deploy CloudFormation (Beta)
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${{ env.CF_STACK_NAME_PROD }} \
+            --template-file infrastructure/cloudformation/ec2-shutdown-advance.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              LambdaFunctionName=${{ env.LAMBDA_NAME_PROD }} \
+              LambdaCodeBucket=${{ env.S3_BUCKET_NAME }} \
+              LambdaCodeKey=${{ env.S3_PATH_PROD }} \
+              LambdaCodeBucket=${{ env.S3_BUCKET_NAME }} \
+              LambdaCodeKey=${{ env.S3_PATH_PROD }}
