@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda function to stop EC2 instances on a schedule
-
+Description:   Lambda that stops EC2 instances matching specific tags on schedule,
+  and logs each shutdown to DynamoDB.
 Parameters:
   LambdaFunctionName:
     Type: String
