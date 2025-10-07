@@ -1,4 +1,4 @@
-name: Deploy Lambda to beta, logs to CloudWatch
+name: Deploy Lambda to beta
 
 on:
   pull_request:
