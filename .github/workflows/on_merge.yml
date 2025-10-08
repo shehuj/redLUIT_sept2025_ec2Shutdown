@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  deploy-beta:
+  deploy-prod:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
