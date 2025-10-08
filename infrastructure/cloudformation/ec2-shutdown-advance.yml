@@ -66,6 +66,8 @@ Resources:
                   - dynamodb:PutItem
                   - dynamodb:BatchWriteItem
                   - dynamodb:GetItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
                 Resource: !GetAtt DynamoDbTable.Arn
 
   LambdaFunction:
